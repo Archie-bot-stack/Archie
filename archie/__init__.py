@@ -1,1 +1,0 @@
-"""Archie Discord Bot package."""
