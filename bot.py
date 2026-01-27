@@ -16,6 +16,8 @@ import matplotlib.pyplot as plt
 from PIL import Image, ImageDraw, ImageFont
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "template.png")
+FONT_PATH = os.path.join(os.path.dirname(__file__), "fonts", "PixelifySans.ttf")
+STEVE_HEAD_URL = "https://mc-heads.net/avatar/MHF_Steve/80"
 
 def generate_lifestats_card(username: str, uuid: str, statistics: dict, profile: dict) -> io.BytesIO:
     from PIL import ImageFilter
@@ -36,27 +38,36 @@ def generate_lifestats_card(username: str, uuid: str, statistics: dict, profile:
     
     draw.rounded_rectangle([0, 0, card_width-1, card_height-1], radius=12, fill=BG_COLOR, outline=BORDER_COLOR, width=2)
     
+    # Load Minecraft font
     try:
-        font_large = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 32)
-        font_medium = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 24)
-        font_small = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
-        font_tiny = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14)
+        font_large = ImageFont.truetype(FONT_PATH, 32)
+        font_medium = ImageFont.truetype(FONT_PATH, 24)
+        font_small = ImageFont.truetype(FONT_PATH, 18)
+        font_tiny = ImageFont.truetype(FONT_PATH, 14)
     except:
         font_large = ImageFont.load_default()
         font_medium = font_large
         font_small = font_large
         font_tiny = font_large
     
-    # Get skin
+    # Get player head - try player UUID first, then fall back to Steve
     skin_img = None
-    for skin_url in [f"https://mc-heads.net/avatar/{uuid}/80", "https://mc-heads.net/avatar/MHF_Steve/80"]:
+    head_urls = [f"https://mc-heads.net/avatar/{uuid}/80", STEVE_HEAD_URL]
+    
+    for skin_url in head_urls:
         try:
             resp = requests.get(skin_url, timeout=5)
-            if resp.status_code == 200:
+            if resp.status_code == 200 and len(resp.content) > 100:
                 skin_img = Image.open(io.BytesIO(resp.content)).convert("RGBA")
-                break
+                if skin_img.size[0] > 0 and skin_img.size[1] > 0:
+                    break
+                skin_img = None
         except:
             continue
+    
+    # Final fallback - create a Steve-colored placeholder if all requests failed
+    if skin_img is None:
+        skin_img = Image.new("RGBA", (80, 80), (139, 90, 43, 255))
     
     def mc_text(x, y, text, font, color):
         shadow = tuple(max(0, int(int(color.lstrip('#')[i:i+2], 16) * 0.3)) for i in (0, 2, 4))
@@ -84,9 +95,8 @@ def generate_lifestats_card(username: str, uuid: str, statistics: dict, profile:
     
     # Header
     draw.line([(20, 100), (card_width - 20, 100)], fill=BORDER_COLOR, width=1)
-    if skin_img:
-        skin_img = skin_img.resize((80, 80), Image.Resampling.LANCZOS)
-        card.paste(skin_img, (25, 12), skin_img)
+    skin_img = skin_img.resize((80, 80), Image.Resampling.LANCZOS)
+    card.paste(skin_img, (25, 12), skin_img)
     draw.rectangle([24, 11, 106, 93], outline=BORDER_COLOR, width=2)
     mc_text(120, 25, username, font_large, WHITE)
     mc_text(120, 60, "Lifesteal Player", font_small, GREEN)
