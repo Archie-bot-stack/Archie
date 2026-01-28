@@ -107,12 +107,12 @@ def generate_lifestats_card(username: str, uuid: str, statistics: dict, profile:
     
     draw.rounded_rectangle([0, 0, card_width-1, card_height-1], radius=12, fill=BG_COLOR, outline=BORDER_COLOR, width=2)
     
-    # Load Minecraft font
+    # Load Minecraft font - larger sizes for readability
     try:
-        font_large = ImageFont.truetype(FONT_PATH, 32)
-        font_medium = ImageFont.truetype(FONT_PATH, 24)
-        font_small = ImageFont.truetype(FONT_PATH, 18)
-        font_tiny = ImageFont.truetype(FONT_PATH, 14)
+        font_large = ImageFont.truetype(FONT_PATH, 40)
+        font_medium = ImageFont.truetype(FONT_PATH, 32)
+        font_small = ImageFont.truetype(FONT_PATH, 26)
+        font_tiny = ImageFont.truetype(FONT_PATH, 20)
     except:
         font_large = ImageFont.load_default()
         font_medium = font_large
