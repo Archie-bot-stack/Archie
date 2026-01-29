@@ -1772,7 +1772,7 @@ class AsyncPIGDIClient:
 
     async def _get_session(self) -> aiohttp.ClientSession:
         if self._session is None or self._session.closed:
-            timeout = aiohttp.ClientTimeout(total=10)
+            timeout = aiohttp.ClientTimeout(total=30)
             self._session = aiohttp.ClientSession(
                 headers={"X-API-KEY": self.api_key},
                 timeout=timeout
