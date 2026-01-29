@@ -234,6 +234,173 @@ def generate_lifestats_card(username: str, uuid: str, statistics: dict, profile:
     buf.seek(0)
     return buf
 
+
+def generate_duelstats_card(username: str, uuid: str, statistics: dict, head_data: Optional[bytes] = None) -> io.BytesIO:
+    from PIL import ImageFilter
+    
+    # Colors (same as lifestats for consistency)
+    GOLD = "#FFAA00"
+    GREEN = "#55FF55"
+    AQUA = "#55FFFF"
+    PINK = "#FF55FF"
+    WHITE = "#FFFFFF"
+    GRAY = "#AAAAAA"
+    BG_COLOR = (20, 20, 20, 200)
+    BORDER_COLOR = (100, 100, 100, 255)
+    
+    card_width, card_height = 800, 520
+    card = Image.new("RGBA", (card_width, card_height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(card)
+    
+    draw.rounded_rectangle([0, 0, card_width-1, card_height-1], radius=12, fill=BG_COLOR, outline=BORDER_COLOR, width=2)
+    
+    # Load Minecraft font - larger sizes for readability (same as lifestats)
+    try:
+        font_large = ImageFont.truetype(FONT_PATH, 40)
+        font_medium = ImageFont.truetype(FONT_PATH, 32)
+        font_small = ImageFont.truetype(FONT_PATH, 26)
+        font_tiny = ImageFont.truetype(FONT_PATH, 20)
+    except:
+        font_large = ImageFont.load_default()
+        font_medium = font_large
+        font_small = font_large
+        font_tiny = font_large
+    
+    # Use pre-fetched head data or create placeholder
+    skin_img = None
+    if head_data:
+        try:
+            skin_img = Image.open(io.BytesIO(head_data)).convert("RGBA")
+            if skin_img.size[0] <= 0 or skin_img.size[1] <= 0:
+                skin_img = None
+        except:
+            skin_img = None
+    
+    if skin_img is None:
+        skin_img = Image.new("RGBA", (80, 80), (139, 90, 43, 255))
+    
+    def mc_text(x, y, text, font, color):
+        shadow = tuple(max(0, int(int(color.lstrip('#')[i:i+2], 16) * 0.3)) for i in (0, 2, 4))
+        draw.text((x+2, y+2), text, font=font, fill=shadow)
+        draw.text((x, y), text, font=font, fill=color)
+    
+    def mc_text_centered(x, y, text, font, color):
+        bbox = draw.textbbox((0, 0), text, font=font)
+        mc_text(x - (bbox[2] - bbox[0]) // 2, y, text, font, color)
+    
+    def get_stat_value(stat_name):
+        stat = statistics.get(stat_name, {})
+        return stat.get("value", 0) if isinstance(stat, dict) else (stat or 0)
+    
+    def get_stat_rank(stat_name):
+        stat = statistics.get(stat_name, {})
+        return stat.get("position") if isinstance(stat, dict) else None
+    
+    def format_number(n):
+        if isinstance(n, float): return f"{n:.2f}"
+        if isinstance(n, int):
+            if n >= 1000000: return f"{n/1000000:.2f}M"
+            return f"{n:,}"
+        return str(n)
+    
+    # Header
+    draw.line([(20, 100), (card_width - 20, 100)], fill=BORDER_COLOR, width=1)
+    skin_img = skin_img.resize((80, 80), Image.Resampling.LANCZOS)
+    card.paste(skin_img, (25, 12), skin_img)
+    draw.rectangle([24, 11, 106, 93], outline=BORDER_COLOR, width=2)
+    mc_text(120, 25, username, font_large, WHITE)
+    mc_text(120, 60, "Duels Player", font_small, AQUA)
+    
+    # Games played in top right (like playtime in lifestats)
+    total_plays = get_stat_value("plays:global:global:lifetime")
+    mc_text(card_width - 200, 25, "Games Played", font_tiny, GRAY)
+    mc_text(card_width - 200, 45, str(total_plays), font_medium, AQUA)
+    
+    # Row 1 - Global stats (wins/losses/winrate/streak)
+    draw.line([(20, 180), (card_width - 20, 180)], fill=BORDER_COLOR, width=1)
+    col4 = (card_width - 40) // 4
+    
+    wins_global = get_stat_value("wins:global:global:lifetime")
+    losses_global = get_stat_value("losses:global:global:lifetime")
+    winrate = (wins_global / (wins_global + losses_global) * 100) if (wins_global + losses_global) > 0 else 0
+    best_streak = get_stat_value("winstreakhighest:global:global:lifetime")
+    
+    stats_row1 = [
+        ("Total Wins", str(wins_global)),
+        ("Total Losses", str(losses_global)),
+        ("Win Rate", f"{winrate:.1f}%"),
+        ("Best Streak", str(best_streak)),
+    ]
+    
+    for i, (label, value) in enumerate(stats_row1):
+        mc_text_centered(20 + col4*i + col4//2, 115, label, font_small, GOLD)
+        mc_text_centered(20 + col4*i + col4//2, 140, value, font_large, GOLD)
+    for i in range(1, 4): draw.line([(20 + col4*i, 105), (20 + col4*i, 175)], fill=BORDER_COLOR, width=1)
+    
+    # Row 2 - ELO stats
+    draw.line([(20, 260), (card_width - 20, 260)], fill=BORDER_COLOR, width=1)
+    col3 = (card_width - 40) // 3
+    
+    elo_stats = [
+        ("NoDebuff ELO", "elo:nodebuff:ranked:lifetime"),
+        ("Sumo ELO", "elo:sumo:ranked:lifetime"),
+        ("Bridge ELO", "elo:bridges:ranked:lifetime"),
+    ]
+    
+    for i, (label, key) in enumerate(elo_stats):
+        mc_text_centered(20 + col3*i + col3//2, 195, label, font_small, GREEN)
+        mc_text_centered(20 + col3*i + col3//2, 220, format_number(get_stat_value(key)), font_large, GREEN)
+    for i in range(1, 3): draw.line([(20 + col3*i, 185), (20 + col3*i, 255)], fill=BORDER_COLOR, width=1)
+    
+    # Row 3 - Global Ranks
+    draw.line([(20, 340), (card_width - 20, 340)], fill=BORDER_COLOR, width=1)
+    
+    rank_stats = [
+        ("Wins Rank", "wins:global:global:lifetime"),
+        ("Losses Rank", "losses:global:global:lifetime"),
+        ("Streak Rank", "winstreakhighest:global:global:lifetime"),
+        ("Plays Rank", "plays:global:global:lifetime"),
+    ]
+    
+    for i, (label, key) in enumerate(rank_stats):
+        rank = get_stat_rank(key)
+        mc_text_centered(20 + col4*i + col4//2, 275, label, font_small, PINK)
+        mc_text_centered(20 + col4*i + col4//2, 300, f"#{rank:,}" if rank else "N/A", font_large, PINK)
+    for i in range(1, 4): draw.line([(20 + col4*i, 265), (20 + col4*i, 335)], fill=BORDER_COLOR, width=1)
+    
+    # Row 4 - ELO Ranks
+    draw.line([(20, 420), (card_width - 20, 420)], fill=BORDER_COLOR, width=1)
+    
+    elo_rank_stats = [
+        ("NoDebuff Rank", "elo:nodebuff:ranked:lifetime"),
+        ("Sumo Rank", "elo:sumo:ranked:lifetime"),
+        ("Bridge Rank", "elo:bridges:ranked:lifetime"),
+    ]
+    
+    for i, (label, key) in enumerate(elo_rank_stats):
+        rank = get_stat_rank(key)
+        mc_text_centered(20 + col3*i + col3//2, 355, label, font_small, AQUA)
+        mc_text_centered(20 + col3*i + col3//2, 380, f"#{rank:,}" if rank else "N/A", font_large, AQUA)
+    for i in range(1, 3): draw.line([(20 + col3*i, 345), (20 + col3*i, 415)], fill=BORDER_COLOR, width=1)
+    
+    # Footer
+    mc_text_centered(card_width // 2, 440, "ArchMC Duels", font_small, GRAY)
+    
+    # Background with slight blur (same as lifestats)
+    bg = Image.open(DUEL_TEMPLATE_PATH).convert("RGBA")
+    bg = bg.resize((card_width, card_height), Image.Resampling.LANCZOS)
+    bg = bg.filter(ImageFilter.GaussianBlur(radius=3))
+    dark_overlay = Image.new("RGBA", (card_width, card_height), (0, 0, 0, 80))
+    bg = Image.alpha_composite(bg, dark_overlay)
+    
+    final = Image.alpha_composite(bg, card)
+    
+    buf = io.BytesIO()
+    final.save(buf, format="PNG")
+    buf.seek(0)
+    return buf
+
+
 YEARLY_STATS_FILE = "yearly_stats.json"
 ERROR_LOG_CHANNEL_ID = 1454137711710703785
 
@@ -734,66 +901,36 @@ async def duelstats(ctx: discord.ApplicationContext, username: str):
         client = get_api_client()
         data = await client.get(f"/v1/players/username/{safe_username}/statistics")
         if data and isinstance(data, dict):
+            username_disp = data.get("username", safe_username)
+            uuid = data.get("uuid", "")
             statistics = data.get("statistics", {})
-            duel_stats = {k: v for k, v in statistics.items() if k.startswith("elo:") or k.startswith("wins:")}
-            logger.info(f"[duelstats] username={safe_username} duel_stats_keys={list(duel_stats.keys())}")
-            if duel_stats:
-                try:
-                    from collections import defaultdict
-                    mode_labels = {
-                        "boxing": ("🥊", "Boxing"),
-                        "nodebuff": ("💧", "NoDebuff"),
-                        "sumo": ("🧍", "Sumo"),
-                        "bridge": ("🌉", "Bridge"),
-                        "classic": ("🗡️", "Classic"),
-                        "combo": ("⚡", "Combo"),
-                        "builduhc": ("🏗️", "BuildUHC"),
-                        "spleef": ("⛏️", "Spleef"),
-                        "fireballfight": ("🔥", "Fireball Fight"),
-                        "invaded": ("🛡️", "Invaded"),
-                        "archer": ("🏹", "Archer"),
-                        "pearl": ("🦪", "Pearl"),
-                        "stickfight": ("🥢", "Stickfight"),
-                        "creeper_sumo": ("💣", "Creeper Sumo"),
-                        "debuff": ("☠️", "Debuff"),
-                        "gapple": ("🍏", "Gapple"),
-                        "bw_mega_quads": ("4️⃣", "BW Mega Quads"),
-                        "bw_mega_trios": ("3️⃣", "BW Mega Trios"),
-                        "bw_mini_duos": ("2️⃣", "BW Mini Duos"),
-                        "bw_mini_solo": ("1️⃣", "BW Mini Solo"),
-                        "bridges": ("🌉", "Bridges"),
-                        "skywars": ("☁️", "Skywars"),
-                        "vanilla": ("🍞", "Vanilla"),
-                        "topfight": ("🔝", "Topfight"),
-                        "global": ("🌐", "Global"),
-                        "rswinternal": ("🧪", "RSWInternal"),
-                        "bedfight": ("🛏️", "BedFight"),
-                    }
-                    mode_stats = defaultdict(lambda: {"ELO": [], "WINS": []})
-                    for k, v in duel_stats.items():
-                        parts = k.split(":")
-                        if len(parts) >= 2:
-                            stat_type = parts[0].upper()
-                            mode = parts[1].lower()
-                            context = ":".join(parts[2:]) if len(parts) > 2 else ""
-                            if stat_type == "ELO":
-                                mode_stats[mode]["ELO"].append((context, v))
-                            elif stat_type == "WINS":
-                                mode_stats[mode]["WINS"].append((context, v))
-                            else:
-                                mode_stats[mode][stat_type].append((context, v))
-                        else:
-                            mode_stats["other"]["OTHER"].append((k, v))
-                    mode_keys = sorted(mode_stats.keys())
-                    page = 0
-                    embed = build_duelstats_embed(data, safe_username, mode_stats, mode_labels, mode_keys, page, 4)
-                    view = DuelStatsView(data, safe_username, mode_stats, mode_labels, mode_keys, page)
-                    await ctx.respond(embed=embed, view=view)
-                except Exception as group_exc:
-                    logger.error(f"[duelstats] Grouping error for {safe_username}: {group_exc}")
-                    await ctx.respond("Failed to format duel stats.")
-            else:
-                await ctx.respond("No duel stats found for that player.")
+            
+            # Fetch head async
+            head_data = await fetch_player_head(uuid) if uuid else None
+            
+            # Generate card in thread pool
+            try:
+                loop = asyncio.get_event_loop()
+                card = await loop.run_in_executor(
+                    None,
+                    generate_duelstats_card,
+                    username_disp, uuid, statistics, head_data
+                )
+                file = discord.File(card, filename="duelstats.png")
+                await ctx.respond(file=file)
+            except Exception as card_error:
+                logger.error(f"Failed to generate duel card: {card_error}")
+                # Fallback to simple embed
+                embed = discord.Embed(
+                    title=f"🥊 Duel Stats for {username_disp}",
+                    color=discord.Color.blue()
+                )
+                for key in ["elo:nodebuff:ranked:lifetime", "elo:sumo:ranked:lifetime", "elo:bridges:ranked:lifetime"]:
+                    stat = statistics.get(key, {})
+                    val = stat.get("value", 0) if isinstance(stat, dict) else stat
+                    embed.add_field(name=key.split(":")[1].title() + " ELO", value=f"`{val}`", inline=True)
+                embed.set_footer(text="ArchMC Duels • Official API")
+                await ctx.respond(embed=embed)
         else:
             await ctx.respond("No duel stats found for that player.")
     except Exception as e:
