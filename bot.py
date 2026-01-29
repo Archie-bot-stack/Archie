@@ -1079,6 +1079,264 @@ async def clantop(ctx: discord.ApplicationContext):
         await ctx.respond("Failed to fetch clan leaderboard. Please try again later.")
 
 
+# /guild - Show what guild a player is in
+@bot.slash_command(
+    name="guild",
+    description="Show what guild a player is in",
+    options=[
+        discord.Option(
+            str,
+            "Minecraft username",
+            required=True,
+            name="username"
+        )
+    ]
+)
+async def guild(ctx: discord.ApplicationContext, username: str):
+    if check_cooldown(ctx.author.id):
+        await ctx.respond("Please wait a few seconds before using commands again.", ephemeral=True)
+        return
+    
+    safe_username = sanitize_username(username)
+    if not safe_username:
+        await ctx.respond("Invalid username.", ephemeral=True)
+        return
+    if is_username_blocked(safe_username):
+        await ctx.respond("That username cannot be looked up.", ephemeral=True)
+        return
+    
+    await ctx.defer()
+    try:
+        client = get_api_client()
+        data = await client.get(f"/v1/guilds/player/username/{safe_username}")
+        if data and isinstance(data, dict):
+            guild_name = data.get("displayName") or data.get("name") or "Unknown"
+            level = data.get("level", 0)
+            if isinstance(level, float):
+                level = int(level)
+            leader = data.get("leaderUsername", "Unknown")
+            members = data.get("memberCount", 0)
+            description = data.get("description", "No description")
+            
+            embed = discord.Embed(
+                title=f"🏰 {guild_name}",
+                description=description[:200] if description else "No description",
+                color=discord.Color.purple()
+            )
+            embed.add_field(name="Level", value=f"`{level}`", inline=True)
+            embed.add_field(name="Leader", value=f"`{leader}`", inline=True)
+            embed.add_field(name="Members", value=f"`{members}`", inline=True)
+            embed.set_footer(text=f"Guild of {safe_username} • ArchMC")
+            await ctx.respond(embed=embed)
+        else:
+            await ctx.respond(f"**{safe_username}** is not in a guild.")
+    except Exception as e:
+        logger.error(f"guild error: {e}")
+        await ctx.respond("Failed to fetch guild info. Please try again later.")
+
+
+# /guildsearch - Search for guilds by name
+@bot.slash_command(
+    name="guildsearch",
+    description="Search for guilds by name",
+    options=[
+        discord.Option(
+            str,
+            "Guild name to search",
+            required=True,
+            name="query"
+        )
+    ]
+)
+async def guildsearch(ctx: discord.ApplicationContext, query: str):
+    if check_cooldown(ctx.author.id):
+        await ctx.respond("Please wait a few seconds before using commands again.", ephemeral=True)
+        return
+    
+    # Basic sanitization for search query
+    safe_query = query.strip()[:50]
+    if not safe_query or len(safe_query) < 2:
+        await ctx.respond("Search query must be at least 2 characters.", ephemeral=True)
+        return
+    
+    await ctx.defer()
+    try:
+        client = get_api_client()
+        data = await client.get(f"/v1/guilds/search/name?q={safe_query}")
+        if data and isinstance(data, dict):
+            guilds = data.get("guilds") or data.get("results") or []
+            if isinstance(guilds, list) and guilds:
+                lines = []
+                for i, g in enumerate(guilds[:10]):
+                    name = g.get("displayName") or g.get("name") or "Unknown"
+                    level = g.get("level", 0)
+                    members = g.get("memberCount", 0)
+                    lines.append(f"**{name}** — Level {int(level)} | {members} members")
+                
+                embed = discord.Embed(
+                    title=f"🔍 Guild Search: {safe_query}",
+                    description="\n".join(lines),
+                    color=discord.Color.blue()
+                )
+                embed.set_footer(text=f"Found {len(guilds)} guild(s) • ArchMC")
+                await ctx.respond(embed=embed)
+            else:
+                await ctx.respond(f"No guilds found matching **{safe_query}**.")
+        else:
+            await ctx.respond(f"No guilds found matching **{safe_query}**.")
+    except Exception as e:
+        logger.error(f"guildsearch error: {e}")
+        await ctx.respond("Failed to search guilds. Please try again later.")
+
+
+# /compare - Compare two players' Lifesteal or Duel stats
+@bot.slash_command(
+    name="compare",
+    description="Compare two players' stats side by side",
+    options=[
+        discord.Option(
+            str,
+            "First player username",
+            required=True,
+            name="player1"
+        ),
+        discord.Option(
+            str,
+            "Second player username",
+            required=True,
+            name="player2"
+        ),
+        discord.Option(
+            str,
+            "Game mode to compare",
+            choices=["lifesteal", "duels"],
+            required=True,
+            name="mode"
+        )
+    ]
+)
+async def compare(ctx: discord.ApplicationContext, player1: str, player2: str, mode: str):
+    if check_cooldown(ctx.author.id):
+        await ctx.respond("Please wait a few seconds before using commands again.", ephemeral=True)
+        return
+    
+    p1 = sanitize_username(player1)
+    p2 = sanitize_username(player2)
+    if not p1 or not p2:
+        await ctx.respond("Invalid username(s).", ephemeral=True)
+        return
+    if is_username_blocked(p1) or is_username_blocked(p2):
+        await ctx.respond("One of those usernames cannot be looked up.", ephemeral=True)
+        return
+    
+    await ctx.defer()
+    try:
+        client = get_api_client()
+        
+        if mode == "lifesteal":
+            # Fetch both players' lifesteal stats
+            stats1, stats2 = await asyncio.gather(
+                client.get(f"/v1/ugc/trojan/players/username/{p1}/statistics"),
+                client.get(f"/v1/ugc/trojan/players/username/{p2}/statistics"),
+                return_exceptions=True
+            )
+            
+            if isinstance(stats1, Exception) or not stats1:
+                await ctx.respond(f"Could not find stats for **{p1}**.")
+                return
+            if isinstance(stats2, Exception) or not stats2:
+                await ctx.respond(f"Could not find stats for **{p2}**.")
+                return
+            
+            s1 = stats1.get("statistics", {})
+            s2 = stats2.get("statistics", {})
+            
+            def get_val(s, key):
+                stat = s.get(key, {})
+                return stat.get("value", 0) if isinstance(stat, dict) else (stat or 0)
+            
+            embed = discord.Embed(
+                title=f"⚔️ Lifesteal Compare",
+                description=f"**{p1}** vs **{p2}**",
+                color=discord.Color.red()
+            )
+            
+            stats_to_compare = [
+                ("Kills", "kills"),
+                ("Deaths", "deaths"),
+                ("K/D", "killDeathRatio"),
+                ("Best Streak", "killstreak"),
+            ]
+            
+            for label, key in stats_to_compare:
+                v1 = get_val(s1, key)
+                v2 = get_val(s2, key)
+                # Determine winner
+                if v1 > v2:
+                    line = f"**{v1}** vs {v2}"
+                elif v2 > v1:
+                    line = f"{v1} vs **{v2}**"
+                else:
+                    line = f"{v1} vs {v2}"
+                embed.add_field(name=label, value=line, inline=True)
+            
+            embed.set_footer(text="ArchMC Lifesteal • Bold = higher")
+            await ctx.respond(embed=embed)
+        
+        else:  # duels
+            stats1, stats2 = await asyncio.gather(
+                client.get(f"/v1/players/username/{p1}/statistics"),
+                client.get(f"/v1/players/username/{p2}/statistics"),
+                return_exceptions=True
+            )
+            
+            if isinstance(stats1, Exception) or not stats1:
+                await ctx.respond(f"Could not find stats for **{p1}**.")
+                return
+            if isinstance(stats2, Exception) or not stats2:
+                await ctx.respond(f"Could not find stats for **{p2}**.")
+                return
+            
+            s1 = stats1.get("statistics", {})
+            s2 = stats2.get("statistics", {})
+            
+            def get_val(s, key):
+                stat = s.get(key, {})
+                return stat.get("value", 0) if isinstance(stat, dict) else (stat or 0)
+            
+            embed = discord.Embed(
+                title=f"🥊 Duels Compare",
+                description=f"**{p1}** vs **{p2}**",
+                color=discord.Color.blue()
+            )
+            
+            # Compare common duel stats
+            duel_stats = [
+                ("NoDebuff ELO", "elo:nodebuff:ranked:lifetime"),
+                ("Sumo ELO", "elo:sumo:ranked:lifetime"),
+                ("Bridge ELO", "elo:bridge:ranked:lifetime"),
+                ("NoDebuff Wins", "wins:nodebuff:ranked:lifetime"),
+            ]
+            
+            for label, key in duel_stats:
+                v1 = get_val(s1, key)
+                v2 = get_val(s2, key)
+                if v1 > v2:
+                    line = f"**{v1}** vs {v2}"
+                elif v2 > v1:
+                    line = f"{v1} vs **{v2}**"
+                else:
+                    line = f"{v1} vs {v2}"
+                embed.add_field(name=label, value=line, inline=True)
+            
+            embed.set_footer(text="ArchMC Duels • Bold = higher")
+            await ctx.respond(embed=embed)
+            
+    except Exception as e:
+        logger.error(f"compare error: {e}")
+        await ctx.respond("Failed to compare players. Please try again later.")
+
+
 # Move sync_commands to after all commands are defined
 
 @bot.event
@@ -1340,6 +1598,21 @@ async def help(ctx: discord.ApplicationContext):
     embed.add_field(
         name="/clantop",
         value="🏅 Show the top clans from ArchMC.",
+        inline=False
+    )
+    embed.add_field(
+        name="/guild",
+        value="🏰 Show what guild a player is in.",
+        inline=False
+    )
+    embed.add_field(
+        name="/guildsearch",
+        value="🔍 Search for guilds by name.",
+        inline=False
+    )
+    embed.add_field(
+        name="/compare",
+        value="⚔️ Compare two players' stats (Lifesteal or Duels).",
         inline=False
     )
     embed.add_field(
