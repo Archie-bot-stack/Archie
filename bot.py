@@ -35,6 +35,22 @@ def check_cooldown(user_id: int) -> bool:
 # === SECURITY: Username sanitization ===
 USERNAME_REGEX = re.compile(r'^[a-zA-Z0-9_]{1,16}$')
 
+# === SECURITY: Blocked words/patterns in usernames (case-insensitive) ===
+# Filters out usernames containing slurs, racist terms, or other offensive content
+BLOCKED_PATTERNS = {
+    "nigger", "nigga", "n1gger", "n1gga", "nigg3r", "nigg4",
+    "faggot", "f4ggot", "fag",
+    "retard", "r3tard",
+    "kike", "chink", "spic", "wetback", "beaner",
+    "tranny", "trannie",
+    # Add more blocked patterns here
+}
+
+def is_username_blocked(username: str) -> bool:
+    """Check if a username contains blocked/offensive terms."""
+    lower = username.lower()
+    return any(pattern in lower for pattern in BLOCKED_PATTERNS)
+
 def sanitize_username(username: str) -> Optional[str]:
     """Validate and sanitize Minecraft username. Returns None if invalid."""
     username = username.strip()[:16]
@@ -70,7 +86,7 @@ def safe_json_save(filepath: str, data: dict) -> bool:
     return False
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "template.png")
-FONT_PATH = os.path.join(os.path.dirname(__file__), "fonts", "PixelifySans.ttf")
+FONT_PATH = os.path.join(os.path.dirname(__file__), "fonts", "MinecraftRegular.ttf")
 STEVE_HEAD_URL = "https://mc-heads.net/avatar/MHF_Steve/80"
 
 async def fetch_player_head(uuid: str) -> Optional[bytes]:
@@ -472,6 +488,9 @@ async def balance(ctx: discord.ApplicationContext, gamemode: str, username: str)
     if not safe_username:
         await ctx.respond("Invalid username.", ephemeral=True)
         return
+    if is_username_blocked(safe_username):
+        await ctx.respond("That username cannot be looked up.", ephemeral=True)
+        return
     
     await ctx.defer()
     try:
@@ -680,6 +699,9 @@ async def duelstats(ctx: discord.ApplicationContext, username: str):
     if not safe_username:
         await ctx.respond("Invalid username.", ephemeral=True)
         return
+    if is_username_blocked(safe_username):
+        await ctx.respond("That username cannot be looked up.", ephemeral=True)
+        return
     
     await ctx.defer()
     try:
@@ -827,6 +849,9 @@ async def lifestats(ctx: discord.ApplicationContext, username: str):
     if not safe_username:
         await ctx.respond("Invalid username. Use only letters, numbers, and underscores (max 16 chars).", ephemeral=True)
         return
+    if is_username_blocked(safe_username):
+        await ctx.respond("That username cannot be looked up.", ephemeral=True)
+        return
     
     await ctx.defer()
     try:
@@ -955,6 +980,9 @@ async def lifestat(ctx: discord.ApplicationContext, username: str, stat: str):
     safe_username = sanitize_username(username)
     if not safe_username:
         await ctx.respond("Invalid username.", ephemeral=True)
+        return
+    if is_username_blocked(safe_username):
+        await ctx.respond("That username cannot be looked up.", ephemeral=True)
         return
     
     await ctx.defer()
