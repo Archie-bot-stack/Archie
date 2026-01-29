@@ -86,6 +86,7 @@ def safe_json_save(filepath: str, data: dict) -> bool:
     return False
 
 TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "template.png")
+DUEL_TEMPLATE_PATH = os.path.join(os.path.dirname(__file__), "duel_template.png")
 FONT_PATH = os.path.join(os.path.dirname(__file__), "fonts", "MinecraftRegular.otf")
 STEVE_HEAD_URL = "https://mc-heads.net/avatar/MHF_Steve/80"
 
