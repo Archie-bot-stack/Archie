@@ -3,7 +3,7 @@ from discord.ext import commands
 import asyncio
 import logging
 
-from utils.security import check_cooldown, sanitize_username, is_username_blocked
+from utils.security import check_cooldown, sanitize_username, is_username_blocked, contains_mention
 from utils.api_client import get_api_client, fetch_player_head
 from utils.error_logging import log_error_to_channel
 from cards import generate_lifestats_card
@@ -104,9 +104,13 @@ class LifestealCog(commands.Cog):
             await ctx.respond("Please wait a few seconds before using commands again.", ephemeral=True)
             return
         
+        if contains_mention(username):
+            await ctx.respond("Please enter a valid Minecraft username, not a Discord mention.", ephemeral=True)
+            return
+        
         safe_username = sanitize_username(username)
         if not safe_username:
-            await ctx.respond("Invalid username. Use only letters, numbers, and underscores (max 16 chars).", ephemeral=True)
+            await ctx.respond("Invalid username. Minecraft usernames can only contain letters, numbers, and underscores (1-16 characters).", ephemeral=True)
             return
         if is_username_blocked(safe_username):
             await ctx.respond("That username cannot be looked up.", ephemeral=True)
@@ -201,9 +205,13 @@ class LifestealCog(commands.Cog):
             await ctx.respond("Please wait a few seconds before using commands again.", ephemeral=True)
             return
         
+        if contains_mention(username):
+            await ctx.respond("Please enter a valid Minecraft username, not a Discord mention.", ephemeral=True)
+            return
+        
         safe_username = sanitize_username(username)
         if not safe_username:
-            await ctx.respond("Invalid username.", ephemeral=True)
+            await ctx.respond("Invalid username. Minecraft usernames can only contain letters, numbers, and underscores (1-16 characters).", ephemeral=True)
             return
         if is_username_blocked(safe_username):
             await ctx.respond("That username cannot be looked up.", ephemeral=True)

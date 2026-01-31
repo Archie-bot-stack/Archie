@@ -29,7 +29,9 @@ BOT_STATUS_CHANNEL = 1454137711140147332
 YEARLY_STATS_FILE = "yearly_stats.json"
 
 # === Bot instance ===
-bot = discord.Bot()
+bot = discord.Bot(
+    allowed_mentions=discord.AllowedMentions(everyone=False, users=False, roles=False)
+)
 
 # === Daily stats tracking ===
 daily_stats = {

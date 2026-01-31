@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 import logging
 
-from utils.security import check_cooldown, sanitize_username, is_username_blocked
+from utils.security import check_cooldown, sanitize_username, is_username_blocked, validate_input, contains_mention
 from utils.api_client import get_api_client
 
 logger = logging.getLogger('archie-bot')
@@ -29,9 +29,13 @@ class GuildsCog(commands.Cog):
             await ctx.respond("Please wait a few seconds before using commands again.", ephemeral=True)
             return
         
+        if contains_mention(username):
+            await ctx.respond("Please enter a valid Minecraft username, not a Discord mention.", ephemeral=True)
+            return
+        
         safe_username = sanitize_username(username)
         if not safe_username:
-            await ctx.respond("Invalid username.", ephemeral=True)
+            await ctx.respond("Invalid username. Minecraft usernames can only contain letters, numbers, and underscores (1-16 characters).", ephemeral=True)
             return
         if is_username_blocked(safe_username):
             await ctx.respond("That username cannot be looked up.", ephemeral=True)
@@ -86,6 +90,11 @@ class GuildsCog(commands.Cog):
         safe_query = query.strip()[:50]
         if not safe_query or len(safe_query) < 2:
             await ctx.respond("Search query must be at least 2 characters.", ephemeral=True)
+            return
+        
+        is_valid, error_msg = validate_input(safe_query)
+        if not is_valid:
+            await ctx.respond(error_msg, ephemeral=True)
             return
         
         await ctx.defer()

@@ -2,9 +2,30 @@ import os
 import aiohttp
 import asyncio
 import logging
+import time
 from typing import Optional, Dict, Any
+from collections import deque
 
 logger = logging.getLogger('archie-bot')
+
+# Global rate limiter: 90 requests per 60 seconds (buffer under 100/min limit)
+MAX_REQUESTS_PER_MINUTE = 90
+_request_timestamps: deque = deque()
+_rate_limit_lock = asyncio.Lock()
+
+async def check_global_rate_limit() -> bool:
+    """Returns True if we should proceed, False if rate limited."""
+    async with _rate_limit_lock:
+        now = time.time()
+        # Remove timestamps older than 60 seconds
+        while _request_timestamps and _request_timestamps[0] < now - 60:
+            _request_timestamps.popleft()
+        
+        if len(_request_timestamps) >= MAX_REQUESTS_PER_MINUTE:
+            return False
+        
+        _request_timestamps.append(now)
+        return True
 
 STEVE_HEAD_URL = "https://mc-heads.net/avatar/MHF_Steve/80"
 
@@ -54,6 +75,11 @@ class AsyncPIGDIClient:
         return self._session
 
     async def _request(self, method: str, path: str) -> Any:
+        # Check global rate limit before making request
+        if not await check_global_rate_limit():
+            logger.warning(f"Global rate limit reached, skipping: {path}")
+            return None
+        
         session = await self._get_session()
         url = f"{self.BASE_URL}{path}"
         try:

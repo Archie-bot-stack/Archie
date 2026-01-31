@@ -3,7 +3,7 @@ from discord.ext import commands
 import asyncio
 import logging
 
-from utils.security import check_cooldown, sanitize_username, is_username_blocked
+from utils.security import check_cooldown, sanitize_username, is_username_blocked, contains_mention
 from utils.api_client import get_api_client
 
 logger = logging.getLogger('archie-bot')
@@ -43,10 +43,14 @@ class UtilityCog(commands.Cog):
             await ctx.respond("Please wait a few seconds before using commands again.", ephemeral=True)
             return
         
+        if contains_mention(player1) or contains_mention(player2):
+            await ctx.respond("Please enter valid Minecraft usernames, not Discord mentions.", ephemeral=True)
+            return
+        
         p1 = sanitize_username(player1)
         p2 = sanitize_username(player2)
         if not p1 or not p2:
-            await ctx.respond("Invalid username(s).", ephemeral=True)
+            await ctx.respond("Invalid username(s). Minecraft usernames can only contain letters, numbers, and underscores (1-16 characters).", ephemeral=True)
             return
         if is_username_blocked(p1) or is_username_blocked(p2):
             await ctx.respond("One of those usernames cannot be looked up.", ephemeral=True)
