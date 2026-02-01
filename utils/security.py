@@ -19,18 +19,42 @@ def check_cooldown(user_id: int) -> bool:
 USERNAME_REGEX = re.compile(r'^[a-zA-Z0-9_]{1,16}$')
 
 BLOCKED_PATTERNS = {
-    "nigger", "nigga", "n1gger", "n1gga", "nigg3r", "nigg4",
-    "faggot", "f4ggot", "fag",
-    "retard", "r3tard",
-    "kike", "chink", "spic", "wetback", "beaner",
-    "tranny", "trannie",
+    "tranny", "trannie", "tr4nny",
 }
 
-# Regex patterns to catch letter-repeated variants (e.g., "nigggga", "faaag")
+# Regex patterns to catch letter substitutions and repeated variants
+# Common substitutions: i=1/l/!/|, a=4/@, e=3, o=0, s=5/$, k=c, etc.
 BLOCKED_REGEX_PATTERNS = [
-    re.compile(r'n+[i1]+g+[e3a4]+r*', re.IGNORECASE),  # n-word variants
-    re.compile(r'f+[a4]+g+[o0]*t*', re.IGNORECASE),    # f-slur variants
-    re.compile(r'r+[e3]+t+[a4]+r+d*', re.IGNORECASE),  # r-word variants
+    # N-word variants
+    re.compile(r'n+[i1l!|]+g+[e3a4@]*r*[s5$]*', re.IGNORECASE),
+    re.compile(r'n+[i1l!|]+g+[a4@]+[s5$]*', re.IGNORECASE),
+    # F-slur variants
+    re.compile(r'f+[a4@]+g+[o0]*t*[s5$]*', re.IGNORECASE),
+    re.compile(r'f+[a4@]+g+[s5$]*', re.IGNORECASE),
+    # R-word variants
+    re.compile(r'r+[e3]+t+[a4@]+r+d*[s5$]*', re.IGNORECASE),
+    # Kike variants
+    re.compile(r'k+[i1l!|]+k+[e3]*[s5$]*', re.IGNORECASE),
+    # Chink variants
+    re.compile(r'ch+[i1l!|]+n+k+[s5$]*', re.IGNORECASE),
+    # Spic variants
+    re.compile(r'sp+[i1l!|]+c+[s5$]*', re.IGNORECASE),
+    # Wetback variants
+    re.compile(r'w+[e3]+t+b+[a4@]+c*k*[s5$]*', re.IGNORECASE),
+    # Beaner variants
+    re.compile(r'b+[e3]+[a4@]*n+[e3]*r*[s5$]*', re.IGNORECASE),
+    # Coon variants
+    re.compile(r'c+[o0]+[o0]+n+[s5$]*', re.IGNORECASE),
+    # Gook variants
+    re.compile(r'g+[o0]+[o0]+k+[s5$]*', re.IGNORECASE),
+    # Dyke variants
+    re.compile(r'd+y+k+[e3]*[s5$]*', re.IGNORECASE),
+    # Paki variants
+    re.compile(r'p+[a4@]+k+[i1l!|]+[s5$]*', re.IGNORECASE),
+    # Jap (slur) variants
+    re.compile(r'\bj+[a4@]+p+[s5$]*\b', re.IGNORECASE),
+    # Tard variants
+    re.compile(r'\b[a-z]*t+[a4@]+r+d+[s5$]*\b', re.IGNORECASE),
 ]
 
 # URL/link detection patterns
