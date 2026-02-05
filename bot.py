@@ -331,6 +331,7 @@ cogs = [
     'cogs.economy',
     'cogs.guilds',
     'cogs.utility',
+    'cogs.stats',
 ]
 
 for cog in cogs:
