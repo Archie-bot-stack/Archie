@@ -282,8 +282,7 @@ async def on_ready():
 
 @bot.event
 async def on_application_command(ctx):
-    guild_name = ctx.guild.name if ctx.guild else "DM"
-    logger.info(f"/{ctx.command.name} used by {ctx.author} in {guild_name}")
+    logger.info(f"/{ctx.command.name} used by {ctx.author} in {getattr(ctx.guild, 'name', 'DM')}")
     
     # Track daily stats
     daily_stats["commands"][ctx.command.name] += 1
@@ -291,9 +290,6 @@ async def on_application_command(ctx):
         daily_stats["guilds"].add(ctx.guild.id)
         daily_stats["guild_usage"][ctx.guild.id] += 1
         daily_stats["guild_names"][ctx.guild.id] = ctx.guild.name
-    else:
-        daily_stats["guild_usage"]["DM"] += 1
-        daily_stats["guild_names"]["DM"] = "Direct Messages"
     
     # Track yearly stats
     yearly_stats["commands"][ctx.command.name] += 1
@@ -301,9 +297,6 @@ async def on_application_command(ctx):
     if ctx.guild:
         yearly_stats["guild_usage"][str(ctx.guild.id)] += 1
         yearly_stats["guild_names"][str(ctx.guild.id)] = ctx.guild.name
-    else:
-        yearly_stats["guild_usage"]["DM"] += 1
-        yearly_stats["guild_names"]["DM"] = "Direct Messages"
     save_yearly_stats()
 
 @bot.event
