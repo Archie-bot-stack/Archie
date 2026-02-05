@@ -81,11 +81,9 @@ class StatsCog(commands.Cog):
         self.bot = bot
         self.stats_data = load_stats_data()
         self.track_players.start()
-        self.daily_snapshot.start()
 
     def cog_unload(self):
         self.track_players.cancel()
-        self.daily_snapshot.cancel()
 
     async def fetch_server_data(self):
         try:
@@ -108,10 +106,13 @@ class StatsCog(commands.Cog):
 
         current = data.get("players", {}).get("online", 0)
         now = datetime.utcnow()
+        today = now.date().isoformat()
 
+        # Update all-time peak
         if current > self.stats_data["peak_alltime"]:
             self.stats_data["peak_alltime"] = current
 
+        # Update hourly history (keep 24h)
         cutoff_24h = (now - timedelta(hours=24)).isoformat()
         self.stats_data["hourly_history"] = [
             entry for entry in self.stats_data["hourly_history"]
@@ -122,8 +123,25 @@ class StatsCog(commands.Cog):
             "players": current
         })
 
+        # Update 24h peak
         if self.stats_data["hourly_history"]:
             self.stats_data["peak_24h"] = max(e["players"] for e in self.stats_data["hourly_history"])
+
+        # Update daily peak for today
+        daily_history = self.stats_data.get("daily_history", [])
+        today_entry = next((e for e in daily_history if e["date"] == today), None)
+        
+        if today_entry:
+            if current > today_entry["players"]:
+                today_entry["players"] = current
+        else:
+            daily_history.append({"date": today, "players": current})
+        
+        # Keep only last 30 days
+        cutoff_date = (now - timedelta(days=30)).date().isoformat()
+        self.stats_data["daily_history"] = [
+            e for e in daily_history if e["date"] >= cutoff_date
+        ]
 
         save_stats_data(self.stats_data)
 
@@ -131,31 +149,7 @@ class StatsCog(commands.Cog):
     async def before_track(self):
         await self.bot.wait_until_ready()
 
-    @tasks.loop(time=datetime.strptime("00:00", "%H:%M").time())
-    async def daily_snapshot(self):
-        data = await self.fetch_server_data()
-        if not data:
-            return
 
-        current = data.get("players", {}).get("online", 0) if data.get("online") else 0
-        today = datetime.utcnow().date().isoformat()
-
-        self.stats_data["daily_history"] = [
-            entry for entry in self.stats_data["daily_history"]
-            if entry["date"] != today
-        ]
-        self.stats_data["daily_history"].append({
-            "date": today,
-            "players": current
-        })
-
-        self.stats_data["daily_history"] = self.stats_data["daily_history"][-30:]
-
-        save_stats_data(self.stats_data)
-
-    @daily_snapshot.before_loop
-    async def before_daily(self):
-        await self.bot.wait_until_ready()
 
     @discord.slash_command(
         name="stats",
