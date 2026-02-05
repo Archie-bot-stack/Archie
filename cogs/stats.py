@@ -209,6 +209,8 @@ class StatsCog(commands.Cog):
                 file = discord.File(graph, filename="player_history.png")
                 embed.set_image(url="attachment://player_history.png")
                 files.append(file)
+            else:
+                embed.set_image(url=ARCHMC_BANNER)
 
             if files:
                 await ctx.respond(embed=embed, files=files)
