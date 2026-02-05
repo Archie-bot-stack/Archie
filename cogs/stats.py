@@ -153,7 +153,7 @@ class StatsCog(commands.Cog):
 
     @discord.slash_command(
         name="stats",
-        description="Show ArchMC server stats with player graph"
+        description="Show ArchMC server stats"
     )
     async def stats(self, ctx: discord.ApplicationContext):
         if check_cooldown(ctx.author.id):
@@ -191,7 +191,7 @@ class StatsCog(commands.Cog):
             embed.add_field(name="Version", value=version, inline=True)
             embed.add_field(name="24h Peak", value=f"**{peak_24h:,}**" if peak_24h else "**--**", inline=True)
             embed.add_field(name="All-Time Peak", value=f"**{peak_alltime:,}**" if peak_alltime else "**--**", inline=True)
-            embed.add_field(name="IP", value="`play.arch.mc`", inline=True)
+            embed.add_field(name="IP", value="`arch.mc`", inline=True)
 
             embed.set_footer(text="ArchMC", icon_url=ARCHMC_LOGO)
 
