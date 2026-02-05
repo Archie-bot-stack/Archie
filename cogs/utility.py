@@ -195,6 +195,11 @@ class UtilityCog(commands.Cog):
             inline=False
         )
         embed.add_field(
+            name="/stats",
+            value="Show stats of the server.",
+            inline=False
+        )
+        embed.add_field(
             name="/lifetop",
             value="🏆 Show the top players for a selected Lifesteal stat.",
             inline=False
