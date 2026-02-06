@@ -145,7 +145,7 @@ async def send_daily_recap():
         ])
         embed.add_field(name="Top Servers", value=top_guilds_text, inline=False)
     
-    embed.set_footer(text="Archie Daily Stats")
+    embed.set_footer(text="Archie Daily Stats • Updates every 5 min")
     
     chart = generate_stats_chart()
     if chart:
@@ -154,8 +154,6 @@ async def send_daily_recap():
         await channel.send(embed=embed, file=file)
     else:
         await channel.send(embed=embed)
-    
-    reset_daily_stats()
 
 def generate_yearly_wrapped_chart():
     commands = dict(yearly_stats["commands"])
@@ -229,15 +227,18 @@ async def send_yearly_wrapped():
 async def daily_recap_loop():
     await bot.wait_until_ready()
     denmark_tz = zoneinfo.ZoneInfo("Europe/Copenhagen")
+    last_date = datetime.now(denmark_tz).date()
     while not bot.is_closed():
-        now = datetime.now(denmark_tz)
-        tomorrow = datetime(now.year, now.month, now.day, tzinfo=denmark_tz) + timedelta(days=1)
-        seconds_until_midnight = (tomorrow - now).total_seconds()
-        await asyncio.sleep(seconds_until_midnight)
+        await asyncio.sleep(300)  # every 5 minutes
         
         now = datetime.now(denmark_tz)
-        if now.month == 1 and now.day == 1:
-            await send_yearly_wrapped()
+        current_date = now.date()
+        
+        if current_date != last_date:
+            if now.month == 1 and now.day == 1:
+                await send_yearly_wrapped()
+            reset_daily_stats()
+            last_date = current_date
         
         await send_daily_recap()
 
@@ -332,6 +333,7 @@ cogs = [
     'cogs.guilds',
     'cogs.utility',
     'cogs.stats',
+    'cogs.serverstats',
 ]
 
 for cog in cogs:

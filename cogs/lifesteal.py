@@ -4,9 +4,8 @@ import asyncio
 import logging
 
 from utils.security import check_cooldown, sanitize_username, is_username_blocked, contains_mention
-from utils.api_client import get_api_client, fetch_player_head
+from utils.api_client import get_api_client
 from utils.error_logging import log_error_to_channel
-from cards import generate_lifestats_card
 
 logger = logging.getLogger('archie-bot')
 
@@ -86,100 +85,6 @@ class LifestealCog(commands.Cog):
             logger.error(f"lifetop error: {e}")
             await log_error_to_channel(self.bot, "lifetop", ctx.author, ctx.guild, e, {"stat": stat})
             await ctx.respond("Failed to fetch leaderboard. Please try again later.")
-
-    @discord.slash_command(
-        name="lifestats",
-        description="Show all Lifesteal stats and profile for a player",
-        options=[
-            discord.Option(
-                str,
-                "Minecraft username",
-                required=True,
-                name="username"
-            )
-        ]
-    )
-    async def lifestats(self, ctx: discord.ApplicationContext, username: str):
-        if check_cooldown(ctx.author.id):
-            await ctx.respond("Please wait a few seconds before using commands again.", ephemeral=True)
-            return
-        
-        if contains_mention(username):
-            await ctx.respond("Please enter a valid Minecraft username, not a Discord mention.", ephemeral=True)
-            return
-        
-        safe_username = sanitize_username(username)
-        if not safe_username:
-            await ctx.respond("Invalid username. Minecraft usernames can only contain letters, numbers, and underscores (1-16 characters).", ephemeral=True)
-            return
-        if is_username_blocked(safe_username):
-            await ctx.respond("That username cannot be looked up.", ephemeral=True)
-            return
-        
-        await ctx.defer()
-        try:
-            client = get_api_client()
-            stats, profile = await asyncio.gather(
-                client.get(f"/v1/ugc/trojan/players/username/{safe_username}/statistics"),
-                client.get(f"/v1/ugc/trojan/players/username/{safe_username}/profile"),
-                return_exceptions=True
-            )
-            
-            if isinstance(stats, Exception):
-                stats = None
-            if isinstance(profile, Exception):
-                profile = None
-                
-            if stats and isinstance(stats, dict):
-                username_disp = stats.get("username", safe_username)
-                uuid = stats.get("uuid", "")
-                statistics = stats.get("statistics", {})
-                
-                head_data = await fetch_player_head(uuid)
-                
-                try:
-                    loop = asyncio.get_event_loop()
-                    card = await loop.run_in_executor(
-                        None, 
-                        generate_lifestats_card, 
-                        username_disp, uuid, statistics, profile or {}, head_data
-                    )
-                    file = discord.File(card, filename="lifestats.png")
-                    await ctx.respond(file=file)
-                except Exception as card_error:
-                    logger.error(f"Failed to generate card: {card_error}")
-                    stat_emojis = {
-                        "kills": "⚔️",
-                        "deaths": "💀",
-                        "killstreak": "🔥",
-                        "killDeathRatio": "📊",
-                        "blocksMined": "⛏️",
-                        "blocksWalked": "🚶",
-                        "blocksPlaced": "🧱"
-                    }
-                    embed = discord.Embed(
-                        title=f"📊 Lifesteal Stats for {username_disp}",
-                        color=discord.Color.red()
-                    )
-                    for k, v in statistics.items():
-                        emoji = stat_emojis.get(k, "📈")
-                        name = f"{emoji} {k.capitalize()}"
-                        value_lines = []
-                        if isinstance(v, dict) and "value" in v:
-                            value_lines.append(f"Value: `{v.get('value', 0)}`")
-                            if v.get('position') is not None:
-                                value_lines.append(f"Rank: `#{v.get('position'):,}`")
-                        else:
-                            value_lines.append(f"Value: `{v}`")
-                        embed.add_field(name=name, value="\n".join(value_lines), inline=True)
-                    embed.set_footer(text="ArchMC Lifesteal • Official API")
-                    await ctx.respond(embed=embed)
-            else:
-                await ctx.respond("No stats found for that player.")
-        except Exception as e:
-            logger.error(f"lifestats error: {e}")
-            await log_error_to_channel(self.bot, "lifestats", ctx.author, ctx.guild, e, {"username": safe_username})
-            await ctx.respond("Failed to fetch stats. Please try again later.")
 
     @discord.slash_command(
         name="lifestat",

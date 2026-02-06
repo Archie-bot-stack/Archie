@@ -36,6 +36,10 @@ def _load_templates():
             _cached_templates['lifesteal'] = Image.open(TEMPLATE_PATH).convert("RGBA")
         if os.path.exists(DUEL_TEMPLATE_PATH):
             _cached_templates['duels'] = Image.open(DUEL_TEMPLATE_PATH).convert("RGBA")
+        # Load skywars.png if present for custom background
+        skywars_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "skywars.png")
+        if os.path.exists(skywars_path):
+            _cached_templates['skywars.png'] = Image.open(skywars_path).convert("RGBA")
     except Exception as e:
         logger.warning(f"Failed to load templates: {e}")
 

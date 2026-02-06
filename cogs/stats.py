@@ -1,221 +1,152 @@
 import discord
-from discord.ext import commands, tasks
-import aiohttp
+from discord.ext import commands
+import asyncio
 import logging
-import io
-import os
-from datetime import datetime, timedelta
-from collections import deque
 
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-
-from utils.security import check_cooldown
+from utils.security import check_cooldown, sanitize_username, is_username_blocked, contains_mention
+from utils.api_client import get_api_client, fetch_player_head
 from utils.error_logging import log_error_to_channel
-from utils.json_ops import safe_json_load, safe_json_save
+from cards import (
+    generate_lifestats_card,
+    generate_duelstats_card,
+    generate_skywarsstats_card,
+)
 
 logger = logging.getLogger('archie-bot')
 
-ARCHMC_IP = "arch.mc"
-STATS_FILE = "server_stats.json"
-ARCHMC_LOGO = "https://www.arch.mc/data/assets/logo/2L-bg.png"
-ARCHMC_BANNER = "https://store.arch.mc/img/banner.png"
 
-
-def load_stats_data():
-    default = {
-        "peak_alltime": 0,
-        "peak_24h": 0,
-        "peak_24h_timestamp": None,
-        "hourly_history": [],
-        "daily_history": []
-    }
-    data = safe_json_load(STATS_FILE, default)
-    return data
-
-
-def save_stats_data(data):
-    safe_json_save(STATS_FILE, data)
-
-
-def generate_player_graph(daily_history: list, hourly_history: list = None) -> io.BytesIO:
-    # Use hourly data if not enough daily data yet
-    if len(daily_history) < 2 and hourly_history and len(hourly_history) >= 2:
-        dates = [datetime.fromisoformat(entry["timestamp"]).strftime('%H:%M') for entry in hourly_history]
-        players = [entry["players"] for entry in hourly_history]
-    elif len(daily_history) >= 2:
-        dates = [datetime.fromisoformat(entry["date"]).strftime('%d/%m') for entry in daily_history]
-        players = [entry["players"] for entry in daily_history]
-    else:
-        return None
-
-    fig, ax = plt.subplots(figsize=(10, 3))
-    fig.patch.set_facecolor('#2b2d31')
-    ax.set_facecolor('#2b2d31')
-
-    ax.plot(dates, players, color='#ED4245', linewidth=2.5, marker='o', markersize=5)
-    ax.fill_between(dates, players, alpha=0.2, color='#ED4245')
-
-    ax.set_ylabel('Players', color='white', fontsize=11)
-    ax.tick_params(colors='white', labelsize=9)
-    ax.spines['bottom'].set_color('#4a4a4a')
-    ax.spines['top'].set_visible(False)
-    ax.spines['left'].set_color('#4a4a4a')
-    ax.spines['right'].set_visible(False)
-
-    ax.grid(True, alpha=0.15, color='white', axis='y')
-
-    plt.xticks(rotation=45)
-    plt.tight_layout()
-
-    buf = io.BytesIO()
-    plt.savefig(buf, format='png', dpi=120, facecolor='#2b2d31')
-    buf.seek(0)
-    plt.close(fig)
-    return buf
-
-
-class StatsCog(commands.Cog):
+class StatCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.stats_data = load_stats_data()
-        self.track_players.start()
-
-    def cog_unload(self):
-        self.track_players.cancel()
-
-    async def fetch_server_data(self):
-        try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-                async with session.get(f"https://api.mcsrvstat.us/3/{ARCHMC_IP}") as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        motd_lines = data.get("motd", {}).get("clean", [])
-                        data["_motd"] = motd_lines[1] if len(motd_lines) > 1 else (motd_lines[0] if motd_lines else "")
-                        return data
-        except Exception as e:
-            logger.error(f"Failed to fetch server data: {e}")
-        return None
-
-    @tasks.loop(minutes=5)
-    async def track_players(self):
-        data = await self.fetch_server_data()
-        if not data or not data.get("online"):
-            return
-
-        current = data.get("players", {}).get("online", 0)
-        now = datetime.utcnow()
-        today = now.date().isoformat()
-
-        # Update all-time peak
-        if current > self.stats_data["peak_alltime"]:
-            self.stats_data["peak_alltime"] = current
-
-        # Update hourly history (keep 24h)
-        cutoff_24h = (now - timedelta(hours=24)).isoformat()
-        self.stats_data["hourly_history"] = [
-            entry for entry in self.stats_data["hourly_history"]
-            if entry["timestamp"] > cutoff_24h
-        ]
-        self.stats_data["hourly_history"].append({
-            "timestamp": now.isoformat(),
-            "players": current
-        })
-
-        # Update 24h peak
-        if self.stats_data["hourly_history"]:
-            self.stats_data["peak_24h"] = max(e["players"] for e in self.stats_data["hourly_history"])
-
-        # Update daily peak for today
-        daily_history = self.stats_data.get("daily_history", [])
-        today_entry = next((e for e in daily_history if e["date"] == today), None)
-        
-        if today_entry:
-            if current > today_entry["players"]:
-                today_entry["players"] = current
-        else:
-            daily_history.append({"date": today, "players": current})
-        
-        # Keep only last 30 days
-        cutoff_date = (now - timedelta(days=30)).date().isoformat()
-        self.stats_data["daily_history"] = [
-            e for e in daily_history if e["date"] >= cutoff_date
-        ]
-
-        save_stats_data(self.stats_data)
-
-    @track_players.before_loop
-    async def before_track(self):
-        await self.bot.wait_until_ready()
-
-
 
     @discord.slash_command(
-        name="stats",
-        description="Show ArchMC server stats"
+        name="stat",
+        description="Show player stats card for any gamemode",
+        options=[
+            discord.Option(
+                str,
+                "Select the gamemode",
+                choices=["lifesteal", "duels", "skywars"],
+                required=True,
+                name="mode"
+            ),
+            discord.Option(
+                str,
+                "Minecraft username",
+                required=True,
+                name="username"
+            ),
+        ]
     )
-    async def stats(self, ctx: discord.ApplicationContext):
+    async def stat(self, ctx: discord.ApplicationContext, mode: str, username: str):
         if check_cooldown(ctx.author.id):
             await ctx.respond("Please wait a few seconds before using commands again.", ephemeral=True)
+            return
+
+        if contains_mention(username):
+            await ctx.respond("Please enter a valid Minecraft username, not a Discord mention.", ephemeral=True)
+            return
+
+        safe_username = sanitize_username(username)
+        if not safe_username:
+            await ctx.respond("Invalid username. Minecraft usernames can only contain letters, numbers, and underscores (1-16 characters).", ephemeral=True)
+            return
+        if is_username_blocked(safe_username):
+            await ctx.respond("That username cannot be looked up.", ephemeral=True)
             return
 
         await ctx.defer()
 
         try:
-            data = await self.fetch_server_data()
-
-            if data and data.get("online"):
-                current = data.get("players", {}).get("online", 0)
-                max_players = data.get("players", {}).get("max", 0)
-                version = data.get("version", "Unknown")
-                is_online = True
-
-                if current > self.stats_data["peak_alltime"]:
-                    self.stats_data["peak_alltime"] = current
-                    save_stats_data(self.stats_data)
-            else:
-                current = 0
-                max_players = 0
-                version = "Unknown"
-                is_online = False
-
-            peak_24h = self.stats_data.get("peak_24h", 0)
-            peak_alltime = self.stats_data.get("peak_alltime", 0)
-
-            embed = discord.Embed(color=0xED4245)
-            embed.set_author(name="ArchMC Server Stats", icon_url=ARCHMC_LOGO)
-
-            embed.add_field(name="Status", value="🟢 Online" if is_online else "🔴 Offline", inline=True)
-            embed.add_field(name="Players", value=f"**{current:,}** / {max_players:,}", inline=True)
-            embed.add_field(name="Version", value=version, inline=True)
-            embed.add_field(name="24h Peak", value=f"**{peak_24h:,}**" if peak_24h else "**--**", inline=True)
-            embed.add_field(name="All-Time Peak", value=f"**{peak_alltime:,}**" if peak_alltime else "**--**", inline=True)
-            embed.add_field(name="IP", value="`arch.mc`", inline=True)
-
-            embed.set_footer(text="ArchMC", icon_url=ARCHMC_LOGO)
-
-            files = []
-            daily = self.stats_data.get("daily_history", [])
-            hourly = self.stats_data.get("hourly_history", [])
-            graph = generate_player_graph(daily, hourly)
-            if graph:
-                file = discord.File(graph, filename="player_history.png")
-                embed.set_image(url="attachment://player_history.png")
-                files.append(file)
-            else:
-                embed.set_image(url=ARCHMC_BANNER)
-
-            if files:
-                await ctx.respond(embed=embed, files=files)
-            else:
-                await ctx.respond(embed=embed)
-
+            if mode == "lifesteal":
+                await self._lifesteal_card(ctx, safe_username)
+            elif mode == "duels":
+                await self._duels_card(ctx, safe_username)
+            elif mode == "skywars":
+                await self._skywars_card(ctx, safe_username)
         except Exception as e:
-            logger.error(f"stats error: {e}")
-            await log_error_to_channel(self.bot, "stats", ctx.author, ctx.guild, e)
-            await ctx.respond("Failed to fetch server stats. Please try again later.")
+            logger.error(f"stat error ({mode}): {e}")
+            await log_error_to_channel(self.bot, "stat", ctx.author, ctx.guild, e, {"mode": mode, "username": safe_username})
+            await ctx.respond("Failed to fetch stats. Please try again later.")
+
+    async def _lifesteal_card(self, ctx, username):
+        client = get_api_client()
+        stats, profile = await asyncio.gather(
+            client.get(f"/v1/ugc/trojan/players/username/{username}/statistics"),
+            client.get(f"/v1/ugc/trojan/players/username/{username}/profile"),
+            return_exceptions=True
+        )
+
+        if isinstance(stats, Exception):
+            stats = None
+        if isinstance(profile, Exception):
+            profile = None
+
+        if not stats or not isinstance(stats, dict):
+            await ctx.respond("No stats found for that player.")
+            return
+
+        username_disp = stats.get("username", username)
+        uuid = stats.get("uuid", "")
+        statistics = stats.get("statistics", {})
+
+        head_data = await fetch_player_head(uuid)
+
+        loop = asyncio.get_event_loop()
+        card = await loop.run_in_executor(
+            None,
+            generate_lifestats_card,
+            username_disp, uuid, statistics, profile or {}, head_data
+        )
+        file = discord.File(card, filename="lifestats.png")
+        await ctx.respond(file=file)
+
+    async def _duels_card(self, ctx, username):
+        client = get_api_client()
+        data = await client.get(f"/v1/players/username/{username}/statistics")
+
+        if not data or not isinstance(data, dict):
+            await ctx.respond("No duel stats found for that player.")
+            return
+
+        username_disp = data.get("username", username)
+        uuid = data.get("uuid", "")
+        statistics = data.get("statistics", {})
+
+        head_data = await fetch_player_head(uuid) if uuid else None
+
+        loop = asyncio.get_event_loop()
+        card = await loop.run_in_executor(
+            None,
+            generate_duelstats_card,
+            username_disp, uuid, statistics, head_data
+        )
+        file = discord.File(card, filename="duelstats.png")
+        await ctx.respond(file=file)
+
+    async def _skywars_card(self, ctx, username):
+        client = get_api_client()
+        data = await client.get(f"/v1/players/username/{username}/statistics")
+
+        if not data or not isinstance(data, dict):
+            await ctx.respond("No SkyWars stats found for that player.")
+            return
+
+        username_disp = data.get("username", username)
+        uuid = data.get("uuid", "")
+        statistics = data.get("statistics", {})
+
+        head_data = await fetch_player_head(uuid) if uuid else None
+
+        loop = asyncio.get_event_loop()
+        card = await loop.run_in_executor(
+            None,
+            generate_skywarsstats_card,
+            username_disp, uuid, statistics, head_data
+        )
+        file = discord.File(card, filename="skywarsstats.png")
+        await ctx.respond(file=file)
 
 
 def setup(bot):
-    bot.add_cog(StatsCog(bot))
+    bot.add_cog(StatCog(bot))

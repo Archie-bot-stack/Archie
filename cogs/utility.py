@@ -205,8 +205,8 @@ class UtilityCog(commands.Cog):
             inline=False
         )
         embed.add_field(
-            name="/lifestats",
-            value="📊 Show all Lifesteal stats and profile for a player (card style).",
+            name="/stat",
+            value="🎴 Show a player stats card — Lifesteal, Duels, SkyWars, or a specific Duel Kit.",
             inline=False
         )
         embed.add_field(
@@ -217,11 +217,6 @@ class UtilityCog(commands.Cog):
         embed.add_field(
             name="/dueltop",
             value="🥊 Show the top players for a selected Duel stat (ELO or Wins).",
-            inline=False
-        )
-        embed.add_field(
-            name="/duelstats",
-            value="🎴 Show all Duel stats for a player, grouped and paginated (card style).",
             inline=False
         )
         embed.add_field(
