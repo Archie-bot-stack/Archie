@@ -26,7 +26,7 @@ GUILD_LEAVE_CHANNEL = int(os.getenv("GUILD_LEAVE_CHANNEL", 0))
 BOT_ERRORS_CHANNEL = 1454137711710703785
 STATS_CHANNEL = 1465102978644971858
 BOT_STATUS_CHANNEL = 1454137711140147332
-YEARLY_STATS_FILE = "yearly_stats.json"
+YEARLY_STATS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "yearly_stats.json")
 
 # === Bot instance ===
 bot = discord.Bot(

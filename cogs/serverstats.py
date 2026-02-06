@@ -4,6 +4,7 @@ import aiohttp
 import logging
 import io
 import os
+import zoneinfo
 from datetime import datetime, timedelta
 from collections import deque
 
@@ -18,7 +19,7 @@ from utils.json_ops import safe_json_load, safe_json_save
 logger = logging.getLogger('archie-bot')
 
 ARCHMC_IP = "arch.mc"
-STATS_FILE = "server_stats.json"
+STATS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "server_stats.json")
 ARCHMC_LOGO = "https://www.arch.mc/data/assets/logo/2L-bg.png"
 ARCHMC_BANNER = "https://store.arch.mc/img/banner.png"
 
@@ -40,11 +41,10 @@ def save_stats_data(data):
 
 
 def generate_player_graph(daily_history: list, hourly_history: list = None) -> io.BytesIO:
-    # Use hourly data if not enough daily data yet
-    if len(daily_history) < 2 and hourly_history and len(hourly_history) >= 2:
+    if hourly_history and len(hourly_history) >= 1:
         dates = [datetime.fromisoformat(entry["timestamp"]).strftime('%H:%M') for entry in hourly_history]
         players = [entry["players"] for entry in hourly_history]
-    elif len(daily_history) >= 2:
+    elif daily_history and len(daily_history) >= 1:
         dates = [datetime.fromisoformat(entry["date"]).strftime('%d/%m') for entry in daily_history]
         players = [entry["players"] for entry in daily_history]
     else:
@@ -105,14 +105,25 @@ class StatsCog(commands.Cog):
             return
 
         current = data.get("players", {}).get("online", 0)
-        now = datetime.utcnow()
+        denmark_tz = zoneinfo.ZoneInfo("Europe/Copenhagen")
+        now = datetime.now(denmark_tz)
         today = now.date().isoformat()
 
         # Update all-time peak
         if current > self.stats_data["peak_alltime"]:
             self.stats_data["peak_alltime"] = current
 
-        # Update hourly history (keep 24h)
+        # Reset daily peak at midnight (new day)
+        stored_date = self.stats_data.get("peak_24h_date")
+        if stored_date != today:
+            self.stats_data["peak_24h"] = 0
+            self.stats_data["peak_24h_date"] = today
+
+        # Update daily peak
+        if current > self.stats_data["peak_24h"]:
+            self.stats_data["peak_24h"] = current
+
+        # Update hourly history (keep 24h for graph)
         cutoff_24h = (now - timedelta(hours=24)).isoformat()
         self.stats_data["hourly_history"] = [
             entry for entry in self.stats_data["hourly_history"]
@@ -122,10 +133,6 @@ class StatsCog(commands.Cog):
             "timestamp": now.isoformat(),
             "players": current
         })
-
-        # Update 24h peak
-        if self.stats_data["hourly_history"]:
-            self.stats_data["peak_24h"] = max(e["players"] for e in self.stats_data["hourly_history"])
 
         # Update daily peak for today
         daily_history = self.stats_data.get("daily_history", [])
